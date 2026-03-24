@@ -4,7 +4,8 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
   push:
-    branches: [main, 'release/**']
+    # No branch filter here — branch matching is done dynamically from sdlc.yaml
+    # so this works for any client regardless of their branch naming convention
 
 permissions:
   contents: read
@@ -27,8 +28,23 @@ jobs:
           if [ -f sdlc.yaml ]; then
             echo "config_exists=true" >> "$GITHUB_OUTPUT"
             echo "Found local sdlc.yaml"
+
+            # Parse dev branch (development.branch)
+            DEV_BRANCH=$(awk '/^development:/{f=1} f && /branch:/{print $2; exit}' sdlc.yaml | tr -d '"')
+            DEV_BRANCH="${DEV_BRANCH:-main}"
+
+            # Parse release prefix from testing.branch_pattern (e.g. "release/**" → "release/")
+            RELEASE_PATTERN=$(awk '/^testing:/{f=1} f && /branch_pattern:/{print $2; exit}' sdlc.yaml | tr -d '"')
+            RELEASE_PREFIX=$(echo "${RELEASE_PATTERN:-release/**}" | sed 's/\*.*//')
+
+            echo "dev_branch=$DEV_BRANCH" >> "$GITHUB_OUTPUT"
+            echo "release_prefix=$RELEASE_PREFIX" >> "$GITHUB_OUTPUT"
+            echo "Detected dev branch: $DEV_BRANCH, release prefix: $RELEASE_PREFIX"
+
           elif gh api "repos/${{ github.repository_owner }}/.github/contents/sdlc.yaml" >/dev/null 2>&1; then
             echo "config_exists=true" >> "$GITHUB_OUTPUT"
+            echo "dev_branch=main" >> "$GITHUB_OUTPUT"
+            echo "release_prefix=release/" >> "$GITHUB_OUTPUT"
             echo "Found central sdlc.yaml in .github repo"
           else
             echo "config_exists=false" >> "$GITHUB_OUTPUT"
@@ -39,20 +55,34 @@ jobs:
         if: steps.config.outputs.config_exists == 'true'
         id: context
         run: |
+          DEV_BRANCH="${{ steps.config.outputs.dev_branch }}"
+          RELEASE_PREFIX="${{ steps.config.outputs.release_prefix }}"
+          CURRENT_BRANCH="${GITHUB_REF#refs/heads/}"
+          BASE_REF="${{ github.base_ref }}"
+
           echo "event=${{ github.event_name }}" >> "$GITHUB_OUTPUT"
           echo "ref=${{ github.ref }}" >> "$GITHUB_OUTPUT"
 
-          if [[ "${{ github.ref }}" == refs/heads/release/* ]]; then
+          if [[ "$GITHUB_REF" == refs/heads/${RELEASE_PREFIX}* ]]; then
             echo "target=release" >> "$GITHUB_OUTPUT"
-          elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+          elif [[ "$CURRENT_BRANCH" == "$DEV_BRANCH" ]]; then
             echo "target=main" >> "$GITHUB_OUTPUT"
-          elif [[ "${{ github.base_ref }}" == "main" ]]; then
+          elif [[ "$BASE_REF" == "$DEV_BRANCH" ]]; then
             echo "target=pr-to-main" >> "$GITHUB_OUTPUT"
-          elif [[ "${{ github.base_ref }}" == release/* ]]; then
+          elif [[ "$BASE_REF" == ${RELEASE_PREFIX}* ]]; then
             echo "target=pr-to-release" >> "$GITHUB_OUTPUT"
           else
             echo "target=other" >> "$GITHUB_OUTPUT"
           fi
+
+          echo "Dev branch: $DEV_BRANCH, Release prefix: $RELEASE_PREFIX"
+          echo "Current branch: $CURRENT_BRANCH, Base ref: $BASE_REF"
+
+      - name: Skip if unrelated branch
+        if: steps.context.outputs.target == 'other'
+        run: |
+          echo "Branch not part of SDLC flow — skipping enforcement"
+          exit 0
 
       - name: "Gate: PRs to release/* require all milestone issues closed"
         if: steps.context.outputs.target == 'pr-to-release' && steps.config.outputs.config_exists == 'true'
@@ -61,9 +91,9 @@ jobs:
         run: |
           echo "Checking milestone issues for release branch PR..."
 
-          # Find milestone matching the release branch version
           BRANCH="${{ github.base_ref }}"
-          VERSION="${BRANCH#release/}"
+          RELEASE_PREFIX="${{ steps.config.outputs.release_prefix }}"
+          VERSION="${BRANCH#${RELEASE_PREFIX}}"
           echo "Release version: $VERSION"
 
           MILESTONE_NUM=$(gh api "repos/${{ github.repository }}/milestones?state=open&per_page=100" \
@@ -127,13 +157,15 @@ jobs:
           echo "TESTING gate — push to release branch accepted, CI will run tests"
 
       - name: Report SDLC status
-        if: always() && steps.config.outputs.config_exists == 'true'
+        if: always() && steps.config.outputs.config_exists == 'true' && steps.context.outputs.target != 'other'
         run: |
           echo "## SDLC Enforcement Summary" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "| Check | Result |" >> "$GITHUB_STEP_SUMMARY"
           echo "|-------|--------|" >> "$GITHUB_STEP_SUMMARY"
           echo "| sdlc.yaml present | Yes |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Dev branch | ${{ steps.config.outputs.dev_branch }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Release prefix | ${{ steps.config.outputs.release_prefix }} |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Target | ${{ steps.context.outputs.target }} |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Event | ${{ github.event_name }} |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Ref | ${{ github.ref }} |" >> "$GITHUB_STEP_SUMMARY"
