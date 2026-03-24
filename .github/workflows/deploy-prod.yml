@@ -1,28 +1,91 @@
 name: Deploy to Production
 
 on:
-  release:
-    types: [published]
+  push:
+    branches:
+      - main
   workflow_dispatch:
-    inputs:
-      tag_name:
-        description: 'Tag to deploy (e.g. v2.1.0)'
-        required: true
-        type: string
+
+env:
+  FRONTEND_PATH: ${{ vars.PROD_FRONTEND_PATH }}
+  S3_BUCKET: ${{ secrets.S3_BUCKET }}
+  S3_PREFIX: landing-page-v2-production
 
 jobs:
-  deploy-production:
-    runs-on: ubuntu-latest
-    environment: production
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.inputs.tag_name || github.ref_name }}
 
-      # IMPORTANT: Replace this step with your actual production deployment commands!
-      - name: Deploy to Production
+  # ==========================================
+  # JOB 1: Build Frontend
+  # ==========================================
+  build-frontend:
+    name: Build Frontend
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Build for production
+        run: npm run build:live
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-build
+          path: dist/
+          retention-days: 1
+
+  # ==========================================
+  # JOB 2: Deploy Frontend via SSM
+  # ==========================================
+  deploy-frontend:
+    name: Deploy Frontend
+    needs: build-frontend
+    runs-on: ubuntu-latest
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Debug GitHub Context
         run: |
-          echo "Simulating deployment to Production Environment..."
-          echo "Deploying Ref: ${{ github.event.inputs.tag_name || github.ref_name }}"
-          echo "✅ Production Deployment Successful"
+          echo "Repository: ${{ github.repository }}"
+          echo "Branch: ${{ github.ref }}"
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-build
+          path: dist/
+
+      - name: Deploy via SSM (simulated)
+        run: |
+          echo "=== Simulating SSM deployment to production ==="
+          echo "S3 Bucket: ${{ env.S3_BUCKET }}"
+          echo "S3 Prefix: ${{ env.S3_PREFIX }}"
+          echo "Frontend Path: ${{ env.FRONTEND_PATH }}"
+          echo "=== Frontend deployed successfully ==="
+
+  # ==========================================
+  # JOB 3: Health Check
+  # ==========================================
+  health-check:
+    name: Health Check
+    needs: deploy-frontend
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Wait for deployment to stabilize
+        run: sleep 10
+
+      - name: Check frontend (simulated)
+        run: echo "✅ Frontend health check passed (simulated)"

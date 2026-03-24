@@ -7,7 +7,7 @@ stages:
     require_issues_assigned: true
 
   development:
-    branch: main
+    branch: lovable-dev
     deploy_target: dev
     required_checks:
       - "CI — Build & Test"
@@ -17,7 +17,7 @@ stages:
     deploy_target: staging
     required_checks:
       - "CI — Build & Test"
-      - "Deploy to Staging / test"
+      - "Deploy to Staging"
 
   evidencing:
     required_artifacts:
