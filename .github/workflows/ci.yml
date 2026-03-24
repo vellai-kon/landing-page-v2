@@ -152,18 +152,10 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Generate App Token
-        id: generate-token
-        uses: actions/create-github-app-token@v1
-        with:
-          app-id: ${{ secrets.SDLC_APP_ID }}
-          private-key: ${{ secrets.SDLC_APP_PRIVATE_KEY }}
-
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ steps.generate-token.outputs.token }}
 
       - name: Generate and Push Tag
         run: |
