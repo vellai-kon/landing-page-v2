@@ -23,6 +23,17 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Run tests
+        run: npm run test
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-dev
+          path: test-results/
+          retention-days: 7
+
       - name: Build (dev)
         run: npm run build:dev
         env:
