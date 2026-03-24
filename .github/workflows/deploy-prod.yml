@@ -31,7 +31,7 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --legacy-peer-deps
 
       - name: Build for production
         run: npm run build:live
@@ -89,9 +89,9 @@ jobs:
               "echo \"Running as user: $(whoami)\"",
               "echo \"=== Deploying Frontend ===\"",
               "aws s3 cp s3://'"${{ env.S3_BUCKET }}"'/'"${{ env.S3_PREFIX }}"'/frontend/dist.tar.gz /tmp/dist.tar.gz",
-              "rm -rf '"${{ env.FRONTEND_PATH }}"'/*",
-              "mkdir -p '"${{ env.FRONTEND_PATH }}"'",
-              "tar -xzf /tmp/dist.tar.gz -C '"${{ env.FRONTEND_PATH }}"'/",
+              "rm -rf '"${{ env.FRONTEND_PATH }}"'/dist/*",
+              "mkdir -p '"${{ env.FRONTEND_PATH }}"'/dist",
+              "tar -xzf /tmp/dist.tar.gz -C '"${{ env.FRONTEND_PATH }}"'/dist/",
               "chown -R www-data:www-data '"${{ env.FRONTEND_PATH }}"'",
               "chmod -R 755 '"${{ env.FRONTEND_PATH }}"'",
               "rm -f /tmp/dist.tar.gz",
